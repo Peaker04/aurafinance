@@ -1,0 +1,12 @@
+{
+  "appId": "vn.edu.fpt.aurafinance",
+  "appName": "AuraFinance",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "backgroundColor": "#080C14",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#080C14",
+    "preferredContentMode": "mobile"
+  }
+}

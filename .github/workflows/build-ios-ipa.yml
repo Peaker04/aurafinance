@@ -1,4 +1,4 @@
-name: Build iOS IPA (AuraFinance)
+name: Build iOS IPA (Identical to Port 3000 UI)
 
 on:
   push:
@@ -9,47 +9,64 @@ on:
 
 jobs:
   build-ios-ipa:
-    name: Build Unsigned iOS .ipa on macOS
+    name: Build Native iOS .ipa from Port 3000 App on macOS
     runs-on: macos-latest
 
     steps:
       - name: 1. Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 2. Setup Flutter SDK
-        uses: subosito/flutter-action@v2
+      - name: 2. Setup Node.js 22
+        uses: actions/setup-node@v4
         with:
-          channel: 'stable'
-          cache: true
+          node-version: '22'
+          cache: 'npm'
 
-      - name: 3. Generate iOS Platform Folder & Install Dependencies
-        working-directory: ./flutter_app
+      - name: 3. Install Dependencies & Build Exact Port 3000 Bundle (dist/)
         run: |
+          npm install
+          npm run build
+
+      - name: 4. Add Capacitor iOS Native Shell Wrapping dist/
+        run: |
+          npm install @capacitor/core @capacitor/cli @capacitor/ios --no-save
           if [ ! -d "ios" ]; then
-            cp lib/main.dart /tmp/main.dart.bak
-            cp pubspec.yaml /tmp/pubspec.yaml.bak
-            flutter create . --platforms=ios --org vn.edu.fpt.aurafinance --project-name aurafinance_prm393_pe2
-            cp /tmp/main.dart.bak lib/main.dart
-            cp /tmp/pubspec.yaml.bak pubspec.yaml
+            npx cap add ios
           fi
-          flutter pub get
+          npx cap sync ios
 
-      - name: 4. Build Flutter iOS Release (No Codesign for Sideloading)
-        working-directory: ./flutter_app
+      - name: 5. Compile Unsigned iOS App via Xcode (xcodebuild)
         run: |
-          flutter build ios --release --no-codesign
+          cd ios/App
+          if [ -d "App.xcworkspace" ]; then
+            BUILD_TARGET="-workspace App.xcworkspace"
+          else
+            BUILD_TARGET="-project App.xcodeproj"
+          fi
+          xcodebuild \
+            $BUILD_TARGET \
+            -scheme App \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
+            clean build
 
-      - name: 5. Package Runner.app into AuraFinance-iOS.ipa
-        working-directory: ./flutter_app/build/ios/iphoneos
+      - name: 6. Package App.app into AuraFinance-iOS.ipa
         run: |
+          APP_PATH=$(find ios/App/build -name "App.app" -type d | head -n 1)
+          echo "Found compiled iOS app at: $APP_PATH"
           mkdir -p Payload
-          cp -r Runner.app Payload/
+          cp -r "$APP_PATH" Payload/
           zip -qry AuraFinance-iOS.ipa Payload
           ls -lh AuraFinance-iOS.ipa
 
-      - name: 6. Upload AuraFinance-iOS.ipa Artifact
+      - name: 7. Upload AuraFinance-iOS.ipa Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AuraFinance-iOS-IPA
-          path: ./flutter_app/build/ios/iphoneos/AuraFinance-iOS.ipa
+          path: ./AuraFinance-iOS.ipa
           retention-days: 30
