@@ -13,6 +13,11 @@ coverage/
 *.sqlite
 *.sqlite-*
 
+# AI Studio & Temp
+.aistudio/
+.idea/
+.vscode/
+
 # Logs & OS
 *.log
 .DS_Store
