@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter_lucide/flutter_lucide.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
@@ -12,8 +13,25 @@ import 'package:path/path.dart' as p;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Khóa định hướng dọc chuẩn mobile UX và thiết lập thanh trạng thái iOS trong suốt
+  SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+      statusBarBrightness: Brightness.dark,
+      systemNavigationBarColor: Color(0xFF080C14),
+      systemNavigationBarIconBrightness: Brightness.light,
+    ),
+  );
+
   final financeProvider = FinanceProvider();
   await financeProvider.initializeAndRestoreSession();
+
   runApp(
     ChangeNotifierProvider.value(
       value: financeProvider,
@@ -102,6 +120,33 @@ class TransactionModel {
       };
 }
 
+const List<String> kAllCategories = [
+  'Salary',
+  'Freelance',
+  'Investment',
+  'Food & Drink',
+  'Transport',
+  'Shopping',
+  'Study',
+  'Bills',
+  'Entertainment',
+];
+
+const List<String> kIncomeCategories = [
+  'Salary',
+  'Freelance',
+  'Investment',
+];
+
+const List<String> kExpenseCategories = [
+  'Food & Drink',
+  'Transport',
+  'Shopping',
+  'Study',
+  'Bills',
+  'Entertainment',
+];
+
 const Map<String, String> kCategoryLabelsVi = {
   'Salary': 'Lương',
   'Freelance': 'Freelance',
@@ -130,6 +175,7 @@ const List<UserAccount> kSeedUsers = [
 ];
 
 const List<TransactionModel> kInitialSeedTransactions = [
+  // User 1: Tạ Tuấn Kỳ (5 giao dịch — Đơn vị: VNĐ)
   TransactionModel(
     id: 'TXN-101',
     userId: 'usr_01',
@@ -180,6 +226,7 @@ const List<TransactionModel> kInitialSeedTransactions = [
     date: '2026-10-27',
     note: 'Vé xe buýt và di chuyển tuần này',
   ),
+  // User 2: Nguyễn Văn A (3 giao dịch độc lập — Đơn vị: VNĐ)
   TransactionModel(
     id: 'TXN-201',
     userId: 'usr_02',
@@ -212,20 +259,53 @@ const List<TransactionModel> kInitialSeedTransactions = [
   ),
 ];
 
+/// Định dạng tiền tệ VNĐ chuẩn dấu chấm phân tách hàng nghìn (1:1 với src/lib/financeEngine.ts)
 String formatCurrencyVnd(double amount, [TransactionType? type]) {
-  final absVal = amount.abs().round().toString();
+  final absAmount = amount.abs().round();
+  final digits = absAmount.toString();
   final buffer = StringBuffer();
-  for (int i = 0; i < absVal.length; i++) {
-    if (i > 0 && (absVal.length - i) % 3 == 0) {
+  for (int i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 == 0) {
       buffer.write('.');
     }
-    buffer.write(absVal[i]);
+    buffer.write(digits[i]);
   }
   final formatted = '${buffer.toString()} ₫';
   if (type == TransactionType.income) return '+$formatted';
   if (type == TransactionType.expense) return '-$formatted';
   if (amount < 0) return '-$formatted';
   return formatted;
+}
+
+String formatLongDate(String dateStr) {
+  final parts = dateStr.split('-').map(int.tryParse).toList();
+  if (parts.length != 3 || parts.contains(null)) return dateStr;
+  return '${parts[2]} tháng ${parts[1]}, ${parts[0]}';
+}
+
+IconData getLucideCategoryIcon(String category) {
+  switch (category) {
+    case 'Salary':
+      return LucideIcons.briefcase;
+    case 'Freelance':
+      return LucideIcons.laptop;
+    case 'Investment':
+      return LucideIcons.trending_up;
+    case 'Food & Drink':
+      return LucideIcons.utensils;
+    case 'Transport':
+      return LucideIcons.car;
+    case 'Shopping':
+      return LucideIcons.shopping_bag;
+    case 'Study':
+      return LucideIcons.graduation_cap;
+    case 'Bills':
+      return LucideIcons.receipt;
+    case 'Entertainment':
+      return LucideIcons.film;
+    default:
+      return LucideIcons.wallet;
+  }
 }
 
 // ============================================================================
@@ -310,6 +390,7 @@ class FinanceProvider extends ChangeNotifier {
   String _searchQuery = '';
   String _typeFilter = 'All';
   String _categoryFilter = 'All Categories';
+  String? _toastMessage;
 
   UserAccount? get currentUser => _currentUser;
   bool get isAuthenticated => _currentUser != null && _authToken != null;
@@ -317,6 +398,7 @@ class FinanceProvider extends ChangeNotifier {
   String get searchQuery => _searchQuery;
   String get typeFilter => _typeFilter;
   String get categoryFilter => _categoryFilter;
+  String? get toastMessage => _toastMessage;
 
   // Công thức bắt buộc: Số dư = Tổng thu nhập - Tổng chi tiêu
   double get totalIncome => _transactions
@@ -365,6 +447,17 @@ class FinanceProvider extends ChangeNotifier {
     }).toList();
   }
 
+  void triggerToast(String msg) {
+    _toastMessage = msg;
+    notifyListeners();
+    Future.delayed(const Duration(milliseconds: 2400), () {
+      if (_toastMessage == msg) {
+        _toastMessage = null;
+        notifyListeners();
+      }
+    });
+  }
+
   void setSearchQuery(String value) {
     _searchQuery = value;
     notifyListeners();
@@ -381,20 +474,30 @@ class FinanceProvider extends ChangeNotifier {
   }
 
   Future<void> initializeAndRestoreSession() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(kSessionKey);
-    if (raw != null) {
-      try {
+    // 1. Tải dữ liệu SQLite local ngay tức thì
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(kSessionKey);
+      if (raw != null) {
         final decoded = jsonDecode(raw) as Map<String, dynamic>;
         _authToken = decoded['auth_token'] as String?;
         _currentUser = UserAccount.fromJson(
             decoded['current_user'] as Map<String, dynamic>);
-        await syncTransactions();
-      } catch (_) {
-        await prefs.remove(kSessionKey);
       }
+    } catch (_) {}
+
+    // Nếu chưa đăng nhập, mặc định nạp sẵn tài khoản user1
+    if (_currentUser == null) {
+      _currentUser = kSeedUsers.first;
+      _authToken = 'jwt_local_sqlite_${_currentUser!.id}';
     }
+
+    _transactions =
+        await LocalSqliteHelper.getTransactionsByUser(_currentUser!.id);
     notifyListeners();
+
+    // Đồng bộ nền qua API nếu có server (không block UI)
+    _backgroundApiSync();
   }
 
   Future<void> login(String email, String password) async {
@@ -406,30 +509,7 @@ class FinanceProvider extends ChangeNotifier {
       throw Exception('Mật khẩu phải có ít nhất 6 ký tự.');
     }
 
-    // Thử kết nối tới backend Node.js + SQLite REST API
-    try {
-      final res = await http
-          .post(
-            Uri.parse('$kApiBaseUrl/auth/login'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'email': cleanEmail, 'password': password}),
-          )
-          .timeout(const Duration(seconds: 2));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        _authToken = data['auth_token'] as String;
-        _currentUser =
-            UserAccount.fromJson(data['current_user'] as Map<String, dynamic>);
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(kSessionKey, jsonEncode(data));
-        await syncTransactions();
-        notifyListeners();
-        return;
-      }
-    } catch (_) {
-      // Fallback sang xác thực SQLite trên máy độc lập khi không có server
-    }
-
+    // 1. Kiểm tra xác thực tức thì qua Seed Users
     final matched = kSeedUsers.where((u) => u.email == cleanEmail).toList();
     if (matched.isEmpty || password != '123456') {
       throw Exception('Email hoặc mật khẩu không chính xác. Vui lòng thử lại.');
@@ -437,6 +517,7 @@ class FinanceProvider extends ChangeNotifier {
 
     _currentUser = matched.first;
     _authToken = 'jwt_local_sqlite_${_currentUser!.id}';
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
       kSessionKey,
@@ -445,38 +526,46 @@ class FinanceProvider extends ChangeNotifier {
         'current_user': _currentUser!.toJson(),
       }),
     );
-    await syncTransactions();
+
+    _transactions =
+        await LocalSqliteHelper.getTransactionsByUser(_currentUser!.id);
+    _searchQuery = '';
+    _typeFilter = 'All';
+    _categoryFilter = 'All Categories';
+    triggerToast('Chào mừng trở lại, ${_currentUser!.name}');
     notifyListeners();
+
+    // 2. Thử gọi API nền nếu server localhost/mạng khả dụng
+    _backgroundApiSync();
   }
 
   Future<void> quickSwitchUser(String targetEmail) async {
     await login(targetEmail, '123456');
+    triggerToast('Đã chuyển sang tài khoản: ${_currentUser!.name}');
   }
 
-  Future<void> syncTransactions() async {
+  Future<void> _backgroundApiSync() async {
     if (_currentUser == null) return;
     try {
       final res = await http
           .get(Uri.parse('$kApiBaseUrl/transactions?userId=${_currentUser!.id}'))
-          .timeout(const Duration(seconds: 2));
+          .timeout(const Duration(milliseconds: 500));
       if (res.statusCode == 200) {
         final list = jsonDecode(res.body) as List<dynamic>;
-        _transactions = list
-            .map((item) =>
-                TransactionModel.fromJson(item as Map<String, dynamic>))
-            .toList();
-        for (final t in _transactions) {
-          await LocalSqliteHelper.upsertTransaction(t);
+        if (list.isNotEmpty) {
+          _transactions = list
+              .map((item) =>
+                  TransactionModel.fromJson(item as Map<String, dynamic>))
+              .toList();
+          for (final t in _transactions) {
+            await LocalSqliteHelper.upsertTransaction(t);
+          }
+          notifyListeners();
         }
-        notifyListeners();
-        return;
       }
     } catch (_) {
-      // Fallback sang SQLite trên thiết bị
+      // Offline fallback
     }
-    _transactions =
-        await LocalSqliteHelper.getTransactionsByUser(_currentUser!.id);
-    notifyListeners();
   }
 
   Future<void> saveTransaction({
@@ -491,6 +580,7 @@ class FinanceProvider extends ChangeNotifier {
     if (amount <= 0) {
       throw Exception('Số tiền phải lớn hơn 0 ₫.');
     }
+    final isNew = existingId == null;
     final id = existingId ?? 'TXN-${10000 + Random().nextInt(89999)}';
     final model = TransactionModel(
       id: id,
@@ -503,18 +593,31 @@ class FinanceProvider extends ChangeNotifier {
       note: note,
     );
     await LocalSqliteHelper.upsertTransaction(model);
-    await syncTransactions();
+    _transactions =
+        await LocalSqliteHelper.getTransactionsByUser(_currentUser!.id);
+    triggerToast(isNew
+        ? 'Đã lưu giao dịch thành công'
+        : 'Đã cập nhật giao dịch thành công');
+    notifyListeners();
   }
 
   Future<void> deleteTransaction(String id) async {
     if (_currentUser == null) return;
     await LocalSqliteHelper.deleteTransaction(id, _currentUser!.id);
-    await syncTransactions();
+    _transactions =
+        await LocalSqliteHelper.getTransactionsByUser(_currentUser!.id);
+    triggerToast('Đã xóa giao dịch — Số dư đã cập nhật');
+    notifyListeners();
   }
 
   Future<void> resetDemoData() async {
     await LocalSqliteHelper.resetToSeedData();
-    await syncTransactions();
+    if (_currentUser != null) {
+      _transactions =
+          await LocalSqliteHelper.getTransactionsByUser(_currentUser!.id);
+    }
+    triggerToast('Đã khôi phục dữ liệu mẫu (VNĐ)');
+    notifyListeners();
   }
 
   Future<void> logout() async {
@@ -523,12 +626,13 @@ class FinanceProvider extends ChangeNotifier {
     _authToken = null;
     _currentUser = null;
     _transactions = [];
+    triggerToast('Đã đăng xuất khỏi tài khoản');
     notifyListeners();
   }
 }
 
 // ============================================================================
-// LIQUID GLASSMORPHISM STYLING & AMBIENT CANVAS (1:1 VỚI LOCALHOST:3000)
+// AMBIENT LIGHTING CANVAS & GLASSMORPHISM CORE (1:1 VỚI LOCALHOST:3000)
 // ============================================================================
 class AmbientLightingCanvas extends StatelessWidget {
   final Widget child;
@@ -540,61 +644,55 @@ class AmbientLightingCanvas extends StatelessWidget {
       color: const Color(0xFF080C14),
       child: Stack(
         children: [
-          // Quả cầu phát quang ngọc lục bảo (Top-Left)
+          // Quả cầu phát quang mờ ngọc lục bảo (Top-Left)
           Positioned(
-            top: -60,
-            left: -60,
-            child: Container(
-              width: 260,
-              height: 260,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    Color(0x3310B981),
-                    Color(0x0010B981),
-                  ],
+            top: -48,
+            left: -48,
+            child: ImageFiltered(
+              imageFilter: ImageFilter.blur(sigmaX: 90, sigmaY: 90),
+              child: Container(
+                width: 260,
+                height: 260,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Color(0x2E10B981),
                 ),
               ),
             ),
           ),
-          // Quả cầu phát quang tím chàm (Middle-Right)
+          // Quả cầu phát quang mờ tím chàm (Middle-Right)
           Positioned(
-            top: 260,
-            right: -80,
-            child: Container(
-              width: 280,
-              height: 280,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    Color(0x2B6366F1),
-                    Color(0x006366F1),
-                  ],
+            top: 280,
+            right: -64,
+            child: ImageFiltered(
+              imageFilter: ImageFilter.blur(sigmaX: 110, sigmaY: 110),
+              child: Container(
+                width: 280,
+                height: 280,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Color(0x296366F1),
                 ),
               ),
             ),
           ),
-          // Quả cầu phát quang xanh dương nhạt (Bottom-Left)
+          // Quả cầu phát quang mờ xanh dương (Bottom-Left)
           Positioned(
-            bottom: 40,
-            left: -60,
-            child: Container(
-              width: 240,
-              height: 240,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    Color(0x240EA5E9),
-                    Color(0x000EA5E9),
-                  ],
+            bottom: 32,
+            left: -40,
+            child: ImageFiltered(
+              imageFilter: ImageFilter.blur(sigmaX: 100, sigmaY: 100),
+              child: Container(
+                width: 240,
+                height: 240,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Color(0x1F0EA5E9),
                 ),
               ),
             ),
           ),
-          // Nội dung hiển thị chính
+          // Nội dung hiển thị
           child,
         ],
       ),
@@ -602,7 +700,7 @@ class AmbientLightingCanvas extends StatelessWidget {
   }
 }
 
-/// Thẻ Frosted Glass Cấp 1 (Dành cho Balance Hero Card, Bottom Nav, Detail Card)
+/// Thẻ Kính Mờ Frosted Glass Cấp 1 (Chuẩn .glass-tier-1 trong index.css)
 class GlassTier1Container extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry? padding;
@@ -624,7 +722,7 @@ class GlassTier1Container extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(borderRadius),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
           child: Container(
             padding: padding,
             decoration: BoxDecoration(
@@ -657,7 +755,7 @@ class GlassTier1Container extends StatelessWidget {
   }
 }
 
-/// Thẻ Bề mặt Kính Bán trong suốt Cấp 2 (Hàng giao dịch, Ô tìm kiếm, Input)
+/// Thẻ Bề Mặt Kính Bán Trong Suốt Cấp 2 (Chuẩn .glass-tier-2 trong index.css)
 class GlassTier2Container extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry? padding;
@@ -665,6 +763,8 @@ class GlassTier2Container extends StatelessWidget {
   final double borderRadius;
   final Border? border;
   final Color? customBgColor;
+  final double? height;
+  final double? width;
 
   const GlassTier2Container({
     super.key,
@@ -674,15 +774,19 @@ class GlassTier2Container extends StatelessWidget {
     this.borderRadius = 16.0,
     this.border,
     this.customBgColor,
+    this.height,
+    this.width,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
+      height: height,
+      width: width,
       margin: margin,
       padding: padding,
       decoration: BoxDecoration(
-        color: customBgColor ?? const Color(0xFF131C2E).withOpacity(0.72),
+        color: customBgColor ?? const Color(0xFF131C2E).withOpacity(0.68),
         borderRadius: BorderRadius.circular(borderRadius),
         border: border ??
             Border.all(
@@ -695,7 +799,7 @@ class GlassTier2Container extends StatelessWidget {
   }
 }
 
-/// Nút bấm Gradient màu chính (`#38BDF8` -> `#818CF8`)
+/// Nút Bấm Gradient Thương Hiệu (Chuẩn .btn-primary-gradient trong index.css)
 class PrimaryGradientButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final Widget child;
@@ -739,7 +843,7 @@ class PrimaryGradientButton extends StatelessWidget {
   }
 }
 
-/// Huy hiệu Biểu tượng Danh mục 1:1 chuẩn thiết kế CategoryIconBadge.tsx
+/// Huy Hiệu Icon Danh Mục (1:1 với CategoryIconBadge.tsx)
 class CategoryIconBadgeWidget extends StatelessWidget {
   final String category;
   final TransactionType type;
@@ -751,31 +855,6 @@ class CategoryIconBadgeWidget extends StatelessWidget {
     required this.type,
     this.size = 44.0,
   });
-
-  IconData _getIcon(String cat) {
-    switch (cat) {
-      case 'Salary':
-        return Icons.work_outline_rounded;
-      case 'Freelance':
-        return Icons.laptop_mac_rounded;
-      case 'Investment':
-        return Icons.trending_up_rounded;
-      case 'Food & Drink':
-        return Icons.restaurant_rounded;
-      case 'Transport':
-        return Icons.directions_car_rounded;
-      case 'Shopping':
-        return Icons.shopping_bag_outlined;
-      case 'Study':
-        return Icons.school_outlined;
-      case 'Bills':
-        return Icons.receipt_long_outlined;
-      case 'Entertainment':
-        return Icons.movie_outlined;
-      default:
-        return Icons.account_balance_wallet_outlined;
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -796,7 +875,7 @@ class CategoryIconBadgeWidget extends StatelessWidget {
       ),
       child: Center(
         child: Icon(
-          _getIcon(category),
+          getLucideCategoryIcon(category),
           size: size * 0.48,
           color: color,
         ),
@@ -806,7 +885,7 @@ class CategoryIconBadgeWidget extends StatelessWidget {
 }
 
 // ============================================================================
-// GIAO DIỆN CHÍNH (THEME & SHELL ĐỒNG BỘ CHUẨN IOS)
+// MAIN APP & ROOT MOBILE NAVIGATOR
 // ============================================================================
 class AuraFinanceApp extends StatelessWidget {
   const AuraFinanceApp({super.key});
@@ -840,7 +919,41 @@ class RootMobileNavigator extends StatefulWidget {
 }
 
 class _RootMobileNavigatorState extends State<RootMobileNavigator> {
-  int _tabIndex = 0;
+  // Navigation stack: 'HOME_DASHBOARD' | 'TRANSACTION_LIST' | 'ADD_EDIT_MODAL' | 'TRANSACTION_DETAIL'
+  String _activeScreen = 'HOME_DASHBOARD';
+  String _previousTab = 'HOME_DASHBOARD';
+  TransactionModel? _selectedTxn;
+  TransactionModel? _editingTxn;
+
+  void _navigateToDetail(TransactionModel txn) {
+    setState(() {
+      if (_activeScreen == 'HOME_DASHBOARD' || _activeScreen == 'TRANSACTION_LIST') {
+        _previousTab = _activeScreen;
+      }
+      _selectedTxn = txn;
+      _activeScreen = 'TRANSACTION_DETAIL';
+    });
+  }
+
+  void _navigateToAddEdit([TransactionModel? txn]) {
+    setState(() {
+      _editingTxn = txn;
+      _activeScreen = 'ADD_EDIT_MODAL';
+    });
+  }
+
+  void _navigateBack() {
+    setState(() {
+      if (_editingTxn != null && _selectedTxn != null) {
+        _editingTxn = null;
+        _activeScreen = 'TRANSACTION_DETAIL';
+      } else {
+        _editingTxn = null;
+        _selectedTxn = null;
+        _activeScreen = _previousTab;
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -849,159 +962,226 @@ class _RootMobileNavigatorState extends State<RootMobileNavigator> {
       return const LoginMobileScreen();
     }
 
+    final showBottomNav = _activeScreen == 'HOME_DASHBOARD' ||
+        _activeScreen == 'TRANSACTION_LIST';
+
+    final bottomSafe = MediaQuery.paddingOf(context).bottom;
+    final topSafe = MediaQuery.paddingOf(context).top;
+
     return Scaffold(
       backgroundColor: const Color(0xFF080C14),
       body: AmbientLightingCanvas(
-        child: SafeArea(
-          top: true,
-          bottom: false,
-          child: IndexedStack(
-            index: _tabIndex,
-            children: [
-              HomeDashboardMobileScreen(
-                onSeeAll: () => setState(() => _tabIndex = 1),
-                onAddTransaction: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const AddEditTransactionMobileScreen(),
-                    ),
-                  );
-                },
+        child: Stack(
+          children: [
+            // Active Screen View
+            Positioned.fill(
+              child: Padding(
+                padding: EdgeInsets.only(top: max(topSafe + 8, 24)),
+                child: _buildCurrentScreen(provider),
               ),
-              const TransactionListMobileScreen(),
-            ],
-          ),
-        ),
-      ),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        bottom: true,
-        child: Container(
-          margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: GlassTier1Container(
-            borderRadius: 24,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // Tab Tổng quan
-                InkWell(
-                  onTap: () => setState(() => _tabIndex = 0),
-                  borderRadius: BorderRadius.circular(16),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 8),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.home_rounded,
-                          size: 22,
-                          color: _tabIndex == 0
-                              ? const Color(0xFF38BDF8)
-                              : const Color(0xFF94A3B8),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Tổng quan',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: _tabIndex == 0
-                                ? const Color(0xFF38BDF8)
-                                : const Color(0xFF94A3B8),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                // Nút Thêm giao dịch FAB nổi (`+`) với Gradient
-                Transform.translate(
-                  offset: const Offset(0, -14),
-                  child: Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF38BDF8), Color(0xFF818CF8)],
-                      ),
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                        color: const Color(0xFF080C14),
-                        width: 3,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF38BDF8).withOpacity(0.40),
-                          blurRadius: 20,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
-                    ),
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(18),
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  const AddEditTransactionMobileScreen(),
-                            ),
-                          );
-                        },
-                        child: const Center(
-                          child: Icon(
-                            Icons.add,
-                            color: Color(0xFF080C14),
-                            size: 28,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-
-                // Tab Sổ giao dịch
-                InkWell(
-                  onTap: () => setState(() => _tabIndex = 1),
-                  borderRadius: BorderRadius.circular(16),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 8),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.format_list_bulleted_rounded,
-                          size: 22,
-                          color: _tabIndex == 1
-                              ? const Color(0xFF38BDF8)
-                              : const Color(0xFF94A3B8),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Sổ giao dịch',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: _tabIndex == 1
-                                ? const Color(0xFF38BDF8)
-                                : const Color(0xFF94A3B8),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
             ),
-          ),
+
+            // Tier 1 Floating Bottom Tab Bar + Center FAB (`+`)
+            if (showBottomNav)
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: max(bottomSafe + 4, 20),
+                child: GlassTier1Container(
+                  borderRadius: 24,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      // Tab Tổng quan
+                      InkWell(
+                        onTap: () =>
+                            setState(() => _activeScreen = 'HOME_DASHBOARD'),
+                        borderRadius: BorderRadius.circular(16),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 8),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                LucideIcons.house,
+                                size: 20,
+                                color: _activeScreen == 'HOME_DASHBOARD'
+                                    ? const Color(0xFF38BDF8)
+                                    : const Color(0xFF94A3B8),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Tổng quan',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: _activeScreen == 'HOME_DASHBOARD'
+                                      ? const Color(0xFF38BDF8)
+                                      : const Color(0xFF94A3B8),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      // Floating Action Button (`+`) với Gradient và Shadow
+                      Transform.translate(
+                        offset: const Offset(0, -18),
+                        child: Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF38BDF8), Color(0xFF818CF8)],
+                            ),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: const Color(0xFF080C14),
+                              width: 2.5,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF38BDF8).withOpacity(0.40),
+                                blurRadius: 20,
+                                offset: const Offset(0, 6),
+                              ),
+                            ],
+                          ),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(16),
+                              onTap: () => _navigateToAddEdit(),
+                              child: const Center(
+                                child: Icon(
+                                  LucideIcons.plus,
+                                  color: Color(0xFF080C14),
+                                  size: 24,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // Tab Sổ giao dịch
+                      InkWell(
+                        onTap: () =>
+                            setState(() => _activeScreen = 'TRANSACTION_LIST'),
+                        borderRadius: BorderRadius.circular(16),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 8),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                LucideIcons.list_filter,
+                                size: 20,
+                                color: _activeScreen == 'TRANSACTION_LIST'
+                                    ? const Color(0xFF38BDF8)
+                                    : const Color(0xFF94A3B8),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Sổ giao dịch',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: _activeScreen == 'TRANSACTION_LIST'
+                                      ? const Color(0xFF38BDF8)
+                                      : const Color(0xFF94A3B8),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            // Animated Glass Toast Notification (1:1 với src/App.tsx)
+            if (provider.toastMessage != null)
+              Positioned(
+                left: 20,
+                right: 20,
+                bottom: showBottomNav ? 96 + bottomSafe : 32 + bottomSafe,
+                child: GlassTier1Container(
+                  borderRadius: 16,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 12),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        LucideIcons.circle_check,
+                        size: 16,
+                        color: Color(0xFF34D399),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          provider.toastMessage!,
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFFF8FAFC),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
+  }
+
+  Widget _buildCurrentScreen(FinanceProvider provider) {
+    switch (_activeScreen) {
+      case 'HOME_DASHBOARD':
+        return HomeDashboardMobileScreen(
+          onSeeAll: () => setState(() => _activeScreen = 'TRANSACTION_LIST'),
+          onSelectTransaction: _navigateToDetail,
+          onOpenAddModal: () => _navigateToAddEdit(),
+        );
+      case 'TRANSACTION_LIST':
+        return TransactionListMobileScreen(
+          onSelectTransaction: _navigateToDetail,
+        );
+      case 'ADD_EDIT_MODAL':
+        return AddEditTransactionMobileScreen(
+          initialTxn: _editingTxn,
+          onCancel: _navigateBack,
+          onSaved: (isNew) {
+            _navigateBack();
+          },
+        );
+      case 'TRANSACTION_DETAIL':
+        final txn = _selectedTxn ?? provider.transactions.first;
+        return TransactionDetailMobileScreen(
+          txn: txn,
+          onBack: _navigateBack,
+          onEdit: () => _navigateToAddEdit(txn),
+          onDeleted: () {
+            _selectedTxn = null;
+            setState(() => _activeScreen = _previousTab);
+          },
+        );
+      default:
+        return HomeDashboardMobileScreen(
+          onSeeAll: () => setState(() => _activeScreen = 'TRANSACTION_LIST'),
+          onSelectTransaction: _navigateToDetail,
+          onOpenAddModal: () => _navigateToAddEdit(),
+        );
+    }
   }
 }
 
@@ -1061,7 +1241,7 @@ class _LoginMobileScreenState extends State<LoginMobileScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      // Top Brand Header
+                      // Top Brand Header (1:1 với Brand Lockup)
                       Column(
                         children: [
                           const SizedBox(height: 16),
@@ -1092,7 +1272,7 @@ class _LoginMobileScreenState extends State<LoginMobileScreen> {
                             ),
                             child: const Center(
                               child: Icon(
-                                Icons.auto_awesome_rounded,
+                                LucideIcons.sparkles,
                                 size: 32,
                                 color: Color(0xFF34D399),
                               ),
@@ -1138,25 +1318,32 @@ class _LoginMobileScreenState extends State<LoginMobileScreen> {
                             const SizedBox(height: 6),
                             GlassTier2Container(
                               padding: const EdgeInsets.symmetric(horizontal: 14),
-                              child: TextField(
-                                controller: _emailCtrl,
-                                style: const TextStyle(
-                                  color: Color(0xFFF8FAFC),
-                                  fontSize: 14,
-                                ),
-                                decoration: const InputDecoration(
-                                  icon: Icon(
-                                    Icons.mail_outline_rounded,
-                                    size: 18,
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    LucideIcons.mail,
+                                    size: 16,
                                     color: Color(0xFF94A3B8),
                                   ),
-                                  hintText: 'Nhập địa chỉ email...',
-                                  hintStyle: TextStyle(
-                                    color: Color(0xFF64748B),
-                                    fontSize: 14,
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _emailCtrl,
+                                      style: const TextStyle(
+                                        color: Color(0xFFF8FAFC),
+                                        fontSize: 14,
+                                      ),
+                                      decoration: const InputDecoration(
+                                        hintText: 'Nhập địa chỉ email...',
+                                        hintStyle: TextStyle(
+                                          color: Color(0xFF64748B),
+                                          fontSize: 14,
+                                        ),
+                                        border: InputBorder.none,
+                                      ),
+                                    ),
                                   ),
-                                  border: InputBorder.none,
-                                ),
+                                ],
                               ),
                             ),
                             const SizedBox(height: 16),
@@ -1171,37 +1358,44 @@ class _LoginMobileScreenState extends State<LoginMobileScreen> {
                             const SizedBox(height: 6),
                             GlassTier2Container(
                               padding: const EdgeInsets.symmetric(horizontal: 14),
-                              child: TextField(
-                                controller: _passCtrl,
-                                obscureText: !_showPass,
-                                style: GoogleFonts.jetBrainsMono(
-                                  color: const Color(0xFFF8FAFC),
-                                  fontSize: 14,
-                                ),
-                                decoration: InputDecoration(
-                                  icon: const Icon(
-                                    Icons.lock_outline_rounded,
-                                    size: 18,
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    LucideIcons.lock,
+                                    size: 16,
                                     color: Color(0xFF94A3B8),
                                   ),
-                                  hintText: 'Nhập mật khẩu...',
-                                  hintStyle: GoogleFonts.jetBrainsMono(
-                                    color: const Color(0xFF64748B),
-                                    fontSize: 14,
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _passCtrl,
+                                      obscureText: !_showPass,
+                                      style: GoogleFonts.jetBrainsMono(
+                                        color: const Color(0xFFF8FAFC),
+                                        fontSize: 14,
+                                      ),
+                                      decoration: const InputDecoration(
+                                        hintText: 'Nhập mật khẩu...',
+                                        hintStyle: TextStyle(
+                                          color: Color(0xFF64748B),
+                                          fontSize: 14,
+                                        ),
+                                        border: InputBorder.none,
+                                      ),
+                                    ),
                                   ),
-                                  border: InputBorder.none,
-                                  suffixIcon: IconButton(
+                                  IconButton(
                                     icon: Icon(
                                       _showPass
-                                          ? Icons.visibility_off_outlined
-                                          : Icons.visibility_outlined,
-                                      size: 18,
+                                          ? LucideIcons.eye_off
+                                          : LucideIcons.eye,
+                                      size: 16,
                                       color: const Color(0xFF94A3B8),
                                     ),
                                     onPressed: () =>
                                         setState(() => _showPass = !_showPass),
                                   ),
-                                ),
+                                ],
                               ),
                             ),
                             if (_error != null) ...[
@@ -1219,7 +1413,7 @@ class _LoginMobileScreenState extends State<LoginMobileScreen> {
                                 child: Row(
                                   children: [
                                     const Icon(
-                                      Icons.error_outline_rounded,
+                                      LucideIcons.circle_alert,
                                       size: 16,
                                       color: Color(0xFFF43F5E),
                                     ),
@@ -1262,8 +1456,8 @@ class _LoginMobileScreenState extends State<LoginMobileScreen> {
                                         ),
                                         SizedBox(width: 8),
                                         Icon(
-                                          Icons.arrow_forward_rounded,
-                                          size: 18,
+                                          LucideIcons.arrow_right,
+                                          size: 16,
                                           color: Color(0xFF080C14),
                                         ),
                                       ],
@@ -1273,7 +1467,7 @@ class _LoginMobileScreenState extends State<LoginMobileScreen> {
                         ),
                       ),
 
-                      // Quick Demo Accounts Section
+                      // Quick Demo Accounts Section (1:1 với LoginScreen.tsx)
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -1299,7 +1493,7 @@ class _LoginMobileScreenState extends State<LoginMobileScreen> {
                             ],
                           ),
                           const SizedBox(height: 8),
-                          // User 1
+                          // User 1 Card
                           InkWell(
                             onTap: () => _selectDemo('user1@fpt.edu.vn', '123456'),
                             borderRadius: BorderRadius.circular(16),
@@ -1328,7 +1522,7 @@ class _LoginMobileScreenState extends State<LoginMobileScreen> {
                                     ),
                                     child: const Center(
                                       child: Icon(
-                                        Icons.how_to_reg_rounded,
+                                        LucideIcons.user_check,
                                         size: 18,
                                         color: Color(0xFF34D399),
                                       ),
@@ -1373,7 +1567,7 @@ class _LoginMobileScreenState extends State<LoginMobileScreen> {
                             ),
                           ),
                           const SizedBox(height: 8),
-                          // User 2
+                          // User 2 Card
                           InkWell(
                             onTap: () => _selectDemo('user2@fpt.edu.vn', '123456'),
                             borderRadius: BorderRadius.circular(16),
@@ -1402,7 +1596,7 @@ class _LoginMobileScreenState extends State<LoginMobileScreen> {
                                     ),
                                     child: const Center(
                                       child: Icon(
-                                        Icons.how_to_reg_rounded,
+                                        LucideIcons.user_check,
                                         size: 18,
                                         color: Color(0xFF818CF8),
                                       ),
@@ -1465,12 +1659,14 @@ class _LoginMobileScreenState extends State<LoginMobileScreen> {
 // ============================================================================
 class HomeDashboardMobileScreen extends StatefulWidget {
   final VoidCallback onSeeAll;
-  final VoidCallback onAddTransaction;
+  final ValueChanged<TransactionModel> onSelectTransaction;
+  final VoidCallback onOpenAddModal;
 
   const HomeDashboardMobileScreen({
     super.key,
     required this.onSeeAll,
-    required this.onAddTransaction,
+    required this.onSelectTransaction,
+    required this.onOpenAddModal,
   });
 
   @override
@@ -1483,7 +1679,9 @@ class _HomeDashboardMobileScreenState extends State<HomeDashboardMobileScreen> {
 
   String _getInitials(String name) {
     final parts = name.trim().split(' ');
-    if (parts.length == 1) return parts[0].substring(0, min(2, parts[0].length)).toUpperCase();
+    if (parts.length == 1) {
+      return parts[0].substring(0, min(2, parts[0].length)).toUpperCase();
+    }
     return (parts[parts.length - 2][0] + parts.last[0]).toUpperCase();
   }
 
@@ -1563,8 +1761,8 @@ class _HomeDashboardMobileScreenState extends State<HomeDashboardMobileScreen> {
                   child: GlassTier2Container(
                     padding: const EdgeInsets.all(8),
                     child: Icon(
-                      Icons.people_outline_rounded,
-                      size: 18,
+                      LucideIcons.users,
+                      size: 16,
                       color: _showAccountMenu
                           ? const Color(0xFF38BDF8)
                           : const Color(0xFF94A3B8),
@@ -1582,7 +1780,7 @@ class _HomeDashboardMobileScreenState extends State<HomeDashboardMobileScreen> {
                     child: const Row(
                       children: [
                         Icon(
-                          Icons.logout_rounded,
+                          LucideIcons.log_out,
                           size: 14,
                           color: Color(0xFFFB7185),
                         ),
@@ -1604,7 +1802,7 @@ class _HomeDashboardMobileScreenState extends State<HomeDashboardMobileScreen> {
           ],
         ),
 
-        // Collapsible Account Switcher & Reset Drawer
+        // Collapsible Account Switcher & Reset Drawer (1:1 với HomeDashboardScreen.tsx)
         if (_showAccountMenu) ...[
           const SizedBox(height: 12),
           GlassTier2Container(
@@ -1631,7 +1829,7 @@ class _HomeDashboardMobileScreenState extends State<HomeDashboardMobileScreen> {
                       child: const Row(
                         children: [
                           Icon(
-                            Icons.refresh_rounded,
+                            LucideIcons.rotate_ccw,
                             size: 12,
                             color: Color(0xFF38BDF8),
                           ),
@@ -1690,7 +1888,7 @@ class _HomeDashboardMobileScreenState extends State<HomeDashboardMobileScreen> {
                                   ),
                                   if (user.email == 'user1@fpt.edu.vn')
                                     const Icon(
-                                      Icons.check_rounded,
+                                      LucideIcons.check,
                                       size: 14,
                                       color: Color(0xFF34D399),
                                     ),
@@ -1748,7 +1946,7 @@ class _HomeDashboardMobileScreenState extends State<HomeDashboardMobileScreen> {
                                   ),
                                   if (user.email == 'user2@fpt.edu.vn')
                                     const Icon(
-                                      Icons.check_rounded,
+                                      LucideIcons.check,
                                       size: 14,
                                       color: Color(0xFF38BDF8),
                                     ),
@@ -1853,7 +2051,7 @@ class _HomeDashboardMobileScreenState extends State<HomeDashboardMobileScreen> {
                             ),
                             child: const Center(
                               child: Icon(
-                                Icons.arrow_downward_rounded,
+                                LucideIcons.arrow_down_left,
                                 size: 16,
                                 color: Color(0xFF34D399),
                               ),
@@ -1909,7 +2107,7 @@ class _HomeDashboardMobileScreenState extends State<HomeDashboardMobileScreen> {
                             ),
                             child: const Center(
                               child: Icon(
-                                Icons.arrow_upward_rounded,
+                                LucideIcons.arrow_up_right,
                                 size: 16,
                                 color: Color(0xFFFB7185),
                               ),
@@ -2044,7 +2242,7 @@ class _HomeDashboardMobileScreenState extends State<HomeDashboardMobileScreen> {
                       ),
                     ),
                     Icon(
-                      Icons.chevron_right_rounded,
+                      LucideIcons.chevron_right,
                       size: 16,
                       color: Color(0xFF38BDF8),
                     ),
@@ -2072,11 +2270,11 @@ class _HomeDashboardMobileScreenState extends State<HomeDashboardMobileScreen> {
                 const SizedBox(height: 12),
                 PrimaryGradientButton(
                   height: 40,
-                  onPressed: widget.onAddTransaction,
+                  onPressed: widget.onOpenAddModal,
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.add, size: 16, color: Color(0xFF080C14)),
+                      Icon(LucideIcons.plus, size: 16, color: Color(0xFF080C14)),
                       SizedBox(width: 4),
                       Text(
                         'Thêm giao dịch đầu tiên',
@@ -2093,7 +2291,12 @@ class _HomeDashboardMobileScreenState extends State<HomeDashboardMobileScreen> {
             ),
           )
         else
-          ...recentItems.map((txn) => TransactionRowTile(txn: txn)),
+          ...recentItems.map(
+            (txn) => TransactionRowTile(
+              txn: txn,
+              onTap: () => widget.onSelectTransaction(txn),
+            ),
+          ),
       ],
     );
   }
@@ -2104,7 +2307,13 @@ class _HomeDashboardMobileScreenState extends State<HomeDashboardMobileScreen> {
 // ============================================================================
 class TransactionRowTile extends StatelessWidget {
   final TransactionModel txn;
-  const TransactionRowTile({super.key, required this.txn});
+  final VoidCallback onTap;
+
+  const TransactionRowTile({
+    super.key,
+    required this.txn,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -2114,13 +2323,7 @@ class TransactionRowTile extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       child: InkWell(
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => TransactionDetailMobileScreen(txn: txn),
-            ),
-          );
-        },
+        onTap: onTap,
         borderRadius: BorderRadius.circular(16),
         child: GlassTier2Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -2180,7 +2383,7 @@ class TransactionRowTile extends StatelessWidget {
                   ),
                   const SizedBox(width: 4),
                   const Icon(
-                    Icons.chevron_right_rounded,
+                    LucideIcons.chevron_right,
                     size: 16,
                     color: Color(0xFF64748B),
                   ),
@@ -2198,96 +2401,165 @@ class TransactionRowTile extends StatelessWidget {
 // MÀN HÌNH 3: SỔ GIAO DỊCH (1:1 VỚI TRANSACTIONLISTSCREEN.TSX)
 // ============================================================================
 class TransactionListMobileScreen extends StatelessWidget {
-  const TransactionListMobileScreen({super.key});
+  final ValueChanged<TransactionModel> onSelectTransaction;
+
+  const TransactionListMobileScreen({
+    super.key,
+    required this.onSelectTransaction,
+  });
 
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<FinanceProvider>();
     final items = provider.filteredTransactions;
 
+    final filteredIncome = items
+        .where((t) => t.type == TransactionType.income)
+        .fold(0.0, (sum, t) => sum + t.amount);
+    final filteredExpense = items
+        .where((t) => t.type == TransactionType.expense)
+        .fold(0.0, (sum, t) => sum + t.amount);
+    final netTotal = filteredIncome - filteredExpense;
+
+    final hasActiveFilters = provider.searchQuery.trim().isNotEmpty ||
+        provider.typeFilter != 'All' ||
+        provider.categoryFilter != 'All Categories';
+
+    void resetFilters() {
+      provider.setSearchQuery('');
+      provider.setTypeFilter('All');
+      provider.setCategoryFilter('All Categories');
+    }
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
       children: [
-        const Text(
-          'Sổ giao dịch',
-          style: TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFFF8FAFC),
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Sổ giao dịch',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                letterSpacing: -0.5,
+                color: Color(0xFFF8FAFC),
+              ),
+            ),
+            if (hasActiveFilters)
+              InkWell(
+                onTap: resetFilters,
+                borderRadius: BorderRadius.circular(8),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: Row(
+                    children: [
+                      Icon(
+                        LucideIcons.rotate_ccw,
+                        size: 14,
+                        color: Color(0xFF38BDF8),
+                      ),
+                      SizedBox(width: 4),
+                      Text(
+                        'Đặt lại',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF38BDF8),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
         ),
         const SizedBox(height: 12),
 
-        // Search Bar
+        // Search Bar (Tier 2 surface)
         GlassTier2Container(
           padding: const EdgeInsets.symmetric(horizontal: 14),
-          child: TextField(
-            onChanged: provider.setSearchQuery,
-            style: const TextStyle(color: Color(0xFFF8FAFC), fontSize: 14),
-            decoration: InputDecoration(
-              icon: const Icon(
-                Icons.search_rounded,
-                size: 20,
+          child: Row(
+            children: [
+              const Icon(
+                LucideIcons.search,
+                size: 16,
                 color: Color(0xFF94A3B8),
               ),
-              hintText: 'Tìm theo ghi chú hoặc danh mục...',
-              hintStyle: const TextStyle(
-                color: Color(0xFF64748B),
-                fontSize: 14,
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextField(
+                  onChanged: provider.setSearchQuery,
+                  style: const TextStyle(color: Color(0xFFF8FAFC), fontSize: 14),
+                  decoration: const InputDecoration(
+                    hintText: 'Tìm theo ghi chú hoặc danh mục...',
+                    hintStyle: TextStyle(
+                      color: Color(0xFF64748B),
+                      fontSize: 14,
+                    ),
+                    border: InputBorder.none,
+                  ),
+                ),
               ),
-              border: InputBorder.none,
-              suffixIcon: provider.searchQuery.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.close_rounded, size: 18),
-                      onPressed: () => provider.setSearchQuery(''),
-                    )
-                  : null,
-            ),
+              if (provider.searchQuery.isNotEmpty)
+                IconButton(
+                  icon: const Icon(LucideIcons.x, size: 16),
+                  onPressed: () => provider.setSearchQuery(''),
+                ),
+            ],
           ),
         ),
 
         const SizedBox(height: 12),
 
-        // Type Filter Chips ("Tất cả", "Thu nhập", "Chi tiêu")
-        Row(
-          children: [
-            for (final entry in [
-              {'val': 'All', 'label': 'Tất cả'},
-              {'val': 'Income', 'label': 'Thu nhập'},
-              {'val': 'Expense', 'label': 'Chi tiêu'},
-            ])
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 3),
+        // Type Filter Segmented Control: Tất cả | Thu nhập | Chi tiêu
+        GlassTier2Container(
+          padding: const EdgeInsets.all(4),
+          child: Row(
+            children: [
+              for (final entry in [
+                {'val': 'All', 'label': 'Tất cả'},
+                {'val': 'Income', 'label': 'Thu nhập'},
+                {'val': 'Expense', 'label': 'Chi tiêu'},
+              ])
+                Expanded(
                   child: InkWell(
                     onTap: () => provider.setTypeFilter(entry['val']!),
                     borderRadius: BorderRadius.circular(12),
                     child: Container(
-                      height: 38,
+                      height: 36,
                       decoration: BoxDecoration(
-                        gradient: provider.typeFilter == entry['val']
-                            ? const LinearGradient(
-                                colors: [Color(0xFF38BDF8), Color(0xFF818CF8)],
-                              )
-                            : null,
-                        color: provider.typeFilter != entry['val']
-                            ? const Color(0xFF131C2E).withOpacity(0.72)
-                            : null,
+                        color: provider.typeFilter == entry['val']
+                            ? (entry['val'] == 'Income'
+                                ? const Color(0xFF34D399).withOpacity(0.20)
+                                : entry['val'] == 'Expense'
+                                    ? const Color(0xFFFB7185).withOpacity(0.20)
+                                    : Colors.white.withOpacity(0.15))
+                            : Colors.transparent,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: provider.typeFilter == entry['val']
-                              ? Colors.transparent
-                              : Colors.white.withOpacity(0.08),
+                              ? (entry['val'] == 'Income'
+                                  ? const Color(0xFF34D399).withOpacity(0.40)
+                                  : entry['val'] == 'Expense'
+                                      ? const Color(0xFFFB7185)
+                                          .withOpacity(0.40)
+                                      : Colors.white.withOpacity(0.20))
+                              : Colors.transparent,
                         ),
                       ),
                       child: Center(
                         child: Text(
                           entry['label']!,
                           style: TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
                             color: provider.typeFilter == entry['val']
-                                ? const Color(0xFF080C14)
+                                ? (entry['val'] == 'Income'
+                                    ? const Color(0xFF34D399)
+                                    : entry['val'] == 'Expense'
+                                        ? const Color(0xFFFB7185)
+                                        : const Color(0xFFF8FAFC))
                                 : const Color(0xFF94A3B8),
                           ),
                         ),
@@ -2295,13 +2567,13 @@ class TransactionListMobileScreen extends StatelessWidget {
                     ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
 
         const SizedBox(height: 12),
 
-        // Category Filter Chips
+        // Category Horizontal Scrollable Chips
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(
@@ -2318,21 +2590,141 @@ class TransactionListMobileScreen extends StatelessWidget {
           ),
         ),
 
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
 
-        // List View
+        // Result Summary Strip (Hiển thị X giao dịch • Tổng ròng)
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: Colors.white.withOpacity(0.10),
+              ),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              RichText(
+                text: TextSpan(
+                  style: GoogleFonts.beVietnamPro(
+                    fontSize: 12,
+                    color: const Color(0xFF94A3B8),
+                  ),
+                  children: [
+                    const TextSpan(text: 'Hiển thị '),
+                    TextSpan(
+                      text: '${items.length}',
+                      style: GoogleFonts.jetBrainsMono(
+                        color: const Color(0xFFF8FAFC),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const TextSpan(text: ' giao dịch'),
+                  ],
+                ),
+              ),
+              RichText(
+                text: TextSpan(
+                  style: GoogleFonts.beVietnamPro(
+                    fontSize: 12,
+                    color: const Color(0xFF94A3B8),
+                  ),
+                  children: [
+                    const TextSpan(text: 'Tổng ròng: '),
+                    TextSpan(
+                      text: formatCurrencyVnd(netTotal),
+                      style: GoogleFonts.jetBrainsMono(
+                        color: netTotal >= 0
+                            ? const Color(0xFF34D399)
+                            : const Color(0xFFFB7185),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        // List View / Empty State
         if (items.isEmpty)
           GlassTier2Container(
-            padding: const EdgeInsets.all(32),
-            child: const Center(
-              child: Text(
-                'Không tìm thấy giao dịch nào phù hợp.',
-                style: TextStyle(color: Color(0xFF94A3B8)),
-              ),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 36),
+            child: Column(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.10),
+                    ),
+                  ),
+                  child: const Center(
+                    child: Icon(
+                      LucideIcons.funnel,
+                      size: 20,
+                      color: Color(0xFF94A3B8),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Không tìm thấy giao dịch',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFFF8FAFC),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Không có khoản thu chi nào khớp với từ khóa hoặc bộ lọc hiện tại.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF94A3B8),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                InkWell(
+                  onTap: resetFilters,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF38BDF8), Color(0xFF818CF8)],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      'Đặt lại bộ lọc',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF080C14),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           )
         else
-          ...items.map((txn) => TransactionRowTile(txn: txn)),
+          ...items.map(
+            (txn) => TransactionRowTile(
+              txn: txn,
+              onTap: () => onSelectTransaction(txn),
+            ),
+          ),
       ],
     );
   }
@@ -2344,25 +2736,25 @@ class TransactionListMobileScreen extends StatelessWidget {
       padding: const EdgeInsets.only(right: 6),
       child: InkWell(
         onTap: () => provider.setCategoryFilter(key),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
           decoration: BoxDecoration(
             color: isSelected
                 ? const Color(0xFF38BDF8).withOpacity(0.20)
-                : const Color(0xFF131C2E).withOpacity(0.60),
-            borderRadius: BorderRadius.circular(10),
+                : const Color(0xFF131C2E).withOpacity(0.68),
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: isSelected
-                  ? const Color(0xFF38BDF8).withOpacity(0.60)
-                  : Colors.white.withOpacity(0.06),
+                  ? const Color(0xFF38BDF8).withOpacity(0.45)
+                  : Colors.white.withOpacity(0.08),
             ),
           ),
           child: Text(
             label,
             style: TextStyle(
               fontSize: 12,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
               color: isSelected
                   ? const Color(0xFF38BDF8)
                   : const Color(0xFF94A3B8),
@@ -2379,7 +2771,15 @@ class TransactionListMobileScreen extends StatelessWidget {
 // ============================================================================
 class AddEditTransactionMobileScreen extends StatefulWidget {
   final TransactionModel? initialTxn;
-  const AddEditTransactionMobileScreen({super.key, this.initialTxn});
+  final VoidCallback onCancel;
+  final ValueChanged<bool> onSaved;
+
+  const AddEditTransactionMobileScreen({
+    super.key,
+    this.initialTxn,
+    required this.onCancel,
+    required this.onSaved,
+  });
 
   @override
   State<AddEditTransactionMobileScreen> createState() =>
@@ -2396,6 +2796,15 @@ class _AddEditTransactionMobileScreenState
   String? _error;
   bool _isLoading = false;
 
+  final List<Map<String, dynamic>> _quickPresets = const [
+    {'label': '50k', 'val': 50000},
+    {'label': '100k', 'val': 100000},
+    {'label': '200k', 'val': 200000},
+    {'label': '500k', 'val': 500000},
+    {'label': '2Tr', 'val': 2000000},
+    {'label': '10Tr', 'val': 10000000},
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -2407,6 +2816,19 @@ class _AddEditTransactionMobileScreenState
     _noteCtrl = TextEditingController(text: txn?.note ?? '');
     _category = txn?.category ?? 'Food & Drink';
     _date = txn?.date ?? DateTime.now().toIso8601String().substring(0, 10);
+  }
+
+  void _handleTypeSwitch(TransactionType nextType) {
+    setState(() {
+      _type = nextType;
+      if (nextType == TransactionType.income &&
+          !kIncomeCategories.contains(_category)) {
+        _category = 'Salary';
+      } else if (nextType == TransactionType.expense &&
+          !kExpenseCategories.contains(_category)) {
+        _category = 'Food & Drink';
+      }
+    });
   }
 
   Future<void> _pickDate() async {
@@ -2453,6 +2875,7 @@ class _AddEditTransactionMobileScreenState
 
     try {
       final provider = context.read<FinanceProvider>();
+      final isNew = widget.initialTxn == null;
       await provider.saveTransaction(
         existingId: widget.initialTxn?.id,
         type: _type,
@@ -2461,7 +2884,9 @@ class _AddEditTransactionMobileScreenState
         date: _date,
         note: _noteCtrl.text.trim(),
       );
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) {
+        widget.onSaved(isNew);
+      }
     } catch (e) {
       setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
@@ -2473,376 +2898,493 @@ class _AddEditTransactionMobileScreenState
   Widget build(BuildContext context) {
     final isEdit = widget.initialTxn != null;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF080C14),
-      body: AmbientLightingCanvas(
-        child: SafeArea(
-          child: Column(
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Top Header Bar
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Top Bar
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    InkWell(
-                      onTap: () => Navigator.of(context).pop(),
-                      borderRadius: BorderRadius.circular(12),
-                      child: const Padding(
-                        padding: EdgeInsets.all(8),
-                        child: Row(
-                          children: [
-                            Icon(Icons.chevron_left_rounded,
-                                color: Color(0xFF38BDF8), size: 24),
-                            Text(
-                              'Hủy',
-                              style: TextStyle(
-                                color: Color(0xFF38BDF8),
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    Text(
-                      isEdit ? 'Chỉnh sửa giao dịch' : 'Thêm giao dịch mới',
-                      style: const TextStyle(
-                        fontSize: 16.5,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFFF8FAFC),
-                      ),
-                    ),
-                    const SizedBox(width: 48),
-                  ],
+              Text(
+                isEdit ? 'Chỉnh sửa giao dịch' : 'Thêm giao dịch',
+                style: const TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: -0.5,
+                  color: Color(0xFFF8FAFC),
                 ),
               ),
-
-              // Form Body
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Segmented Type Selector (Thu nhập / Chi tiêu)
-                      Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF131C2E).withOpacity(0.80),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: Colors.white.withOpacity(0.08),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: InkWell(
-                                onTap: () => setState(() {
-                                  _type = TransactionType.income;
-                                  if (!['Salary', 'Freelance', 'Investment']
-                                      .contains(_category)) {
-                                    _category = 'Salary';
-                                  }
-                                }),
-                                borderRadius: BorderRadius.circular(12),
-                                child: Container(
-                                  height: 40,
-                                  decoration: BoxDecoration(
-                                    color: _type == TransactionType.income
-                                        ? const Color(0xFF34D399)
-                                        : Colors.transparent,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      'Thu nhập',
-                                      style: TextStyle(
-                                        fontSize: 13.5,
-                                        fontWeight: FontWeight.bold,
-                                        color: _type == TransactionType.income
-                                            ? const Color(0xFF080C14)
-                                            : const Color(0xFF94A3B8),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            Expanded(
-                              child: InkWell(
-                                onTap: () => setState(() {
-                                  _type = TransactionType.expense;
-                                  if (['Salary', 'Freelance', 'Investment']
-                                      .contains(_category)) {
-                                    _category = 'Food & Drink';
-                                  }
-                                }),
-                                borderRadius: BorderRadius.circular(12),
-                                child: Container(
-                                  height: 40,
-                                  decoration: BoxDecoration(
-                                    color: _type == TransactionType.expense
-                                        ? const Color(0xFFFB7185)
-                                        : Colors.transparent,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      'Chi tiêu',
-                                      style: TextStyle(
-                                        fontSize: 13.5,
-                                        fontWeight: FontWeight.bold,
-                                        color: _type == TransactionType.expense
-                                            ? const Color(0xFF080C14)
-                                            : const Color(0xFF94A3B8),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 20),
-
-                      // Amount Input
-                      const Text(
-                        'Số tiền (VNĐ) *',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF94A3B8),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      GlassTier2Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        child: TextField(
-                          controller: _amountCtrl,
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                          style: GoogleFonts.jetBrainsMono(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: _type == TransactionType.income
-                                ? const Color(0xFF34D399)
-                                : const Color(0xFFFB7185),
-                          ),
-                          decoration: InputDecoration(
-                            suffixText: '₫',
-                            suffixStyle: GoogleFonts.jetBrainsMono(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: const Color(0xFF94A3B8),
-                            ),
-                            hintText: '0',
-                            hintStyle: GoogleFonts.jetBrainsMono(
-                              fontSize: 18,
-                              color: const Color(0xFF64748B),
-                            ),
-                            border: InputBorder.none,
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 20),
-
-                      // Category Grid / Selector
-                      const Text(
-                        'Danh mục giao dịch *',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF94A3B8),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: kCategoryLabelsVi.entries.map((entry) {
-                          final isSelected = _category == entry.key;
-                          return InkWell(
-                            onTap: () => setState(() => _category = entry.key),
-                            borderRadius: BorderRadius.circular(12),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: isSelected
-                                    ? const Color(0xFF38BDF8).withOpacity(0.20)
-                                    : const Color(0xFF131C2E).withOpacity(0.60),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: isSelected
-                                      ? const Color(0xFF38BDF8).withOpacity(0.60)
-                                      : Colors.white.withOpacity(0.08),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  CategoryIconBadgeWidget(
-                                    category: entry.key,
-                                    type: _type,
-                                    size: 26,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    entry.value,
-                                    style: TextStyle(
-                                      fontSize: 12.5,
-                                      fontWeight: isSelected
-                                          ? FontWeight.bold
-                                          : FontWeight.normal,
-                                      color: isSelected
-                                          ? const Color(0xFF38BDF8)
-                                          : const Color(0xFFF8FAFC),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      ),
-
-                      const SizedBox(height: 20),
-
-                      // Date Picker Field
-                      const Text(
-                        'Ngày giao dịch (YYYY-MM-DD) *',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF94A3B8),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      InkWell(
-                        onTap: _pickDate,
-                        borderRadius: BorderRadius.circular(16),
-                        child: GlassTier2Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 14),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                _date,
-                                style: GoogleFonts.jetBrainsMono(
-                                  fontSize: 14,
-                                  color: const Color(0xFFF8FAFC),
-                                ),
-                              ),
-                              const Icon(
-                                Icons.calendar_today_rounded,
-                                size: 18,
-                                color: Color(0xFF38BDF8),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 20),
-
-                      // Note Input
-                      const Text(
-                        'Ghi chú / Mô tả',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF94A3B8),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      GlassTier2Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        child: TextField(
-                          controller: _noteCtrl,
-                          style: const TextStyle(
-                            color: Color(0xFFF8FAFC),
-                            fontSize: 14,
-                          ),
-                          decoration: const InputDecoration(
-                            hintText: 'Nhập mô tả giao dịch...',
-                            hintStyle: TextStyle(
-                              color: Color(0xFF64748B),
-                              fontSize: 14,
-                            ),
-                            border: InputBorder.none,
-                          ),
-                        ),
-                      ),
-
-                      if (_error != null) ...[
-                        const SizedBox(height: 16),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF43F5E).withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: const Color(0xFFF43F5E).withOpacity(0.40),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.error_outline_rounded,
-                                size: 16,
-                                color: Color(0xFFF43F5E),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  _error!,
-                                  style: const TextStyle(
-                                    color: Color(0xFFFB7185),
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-
-                      const SizedBox(height: 28),
-
-                      PrimaryGradientButton(
-                        onPressed: _isLoading ? null : _save,
-                        child: _isLoading
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Color(0xFF080C14),
-                                ),
-                              )
-                            : Text(
-                                isEdit ? 'Cập nhật giao dịch' : 'Lưu giao dịch',
-                                style: const TextStyle(
-                                  color: Color(0xFF080C14),
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 15,
-                                ),
-                              ),
-                      ),
-                    ],
+              InkWell(
+                onTap: widget.onCancel,
+                borderRadius: BorderRadius.circular(12),
+                child: GlassTier2Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  child: const Text(
+                    'Hủy',
+                    style: TextStyle(
+                      color: Color(0xFF94A3B8),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
             ],
           ),
-        ),
+          if (isEdit && widget.initialTxn != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              'Mã #${widget.initialTxn!.id}',
+              style: GoogleFonts.jetBrainsMono(
+                fontSize: 11,
+                color: const Color(0xFF94A3B8),
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 16),
+
+          // Glass Form Container (Tier 1)
+          GlassTier1Container(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Type Switcher
+                GlassTier2Container(
+                  padding: const EdgeInsets.all(4),
+                  child: Row(
+                    children: [
+                      // Thu nhập
+                      Expanded(
+                        child: InkWell(
+                          onTap: () =>
+                              _handleTypeSwitch(TransactionType.income),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: _type == TransactionType.income
+                                  ? const Color(0xFF34D399).withOpacity(0.20)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: _type == TransactionType.income
+                                    ? const Color(0xFF34D399).withOpacity(0.50)
+                                    : Colors.transparent,
+                              ),
+                            ),
+                            child: Center(
+                              child: Text(
+                                'Thu nhập',
+                                style: TextStyle(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: _type == TransactionType.income
+                                      ? const Color(0xFF34D399)
+                                      : const Color(0xFF94A3B8),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      // Chi tiêu
+                      Expanded(
+                        child: InkWell(
+                          onTap: () =>
+                              _handleTypeSwitch(TransactionType.expense),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: _type == TransactionType.expense
+                                  ? const Color(0xFFFB7185).withOpacity(0.20)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: _type == TransactionType.expense
+                                    ? const Color(0xFFFB7185).withOpacity(0.50)
+                                    : Colors.transparent,
+                              ),
+                            ),
+                            child: Center(
+                              child: Text(
+                                'Chi tiêu',
+                                style: TextStyle(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: _type == TransactionType.expense
+                                      ? const Color(0xFFFB7185)
+                                      : const Color(0xFF94A3B8),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 18),
+
+                // Amount Input Field
+                const Text(
+                  'SỐ TIỀN (VNĐ) *',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                    color: Color(0xFF94A3B8),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                GlassTier2Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _amountCtrl,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly
+                          ],
+                          style: GoogleFonts.jetBrainsMono(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: const Color(0xFFF8FAFC),
+                          ),
+                          decoration: const InputDecoration(
+                            hintText: '0',
+                            hintStyle: TextStyle(
+                              color: Color(0xFF64748B),
+                              fontSize: 24,
+                            ),
+                            border: InputBorder.none,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        '₫',
+                        style: GoogleFonts.jetBrainsMono(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: _type == TransactionType.income
+                              ? const Color(0xFF34D399)
+                              : const Color(0xFFFB7185),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Quick VNĐ Denomination Chips (1:1 với AddEditTransactionScreen.tsx)
+                const SizedBox(height: 8),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: _quickPresets.map((preset) {
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: InkWell(
+                          onTap: () {
+                            _amountCtrl.text = preset['val'].toString();
+                            setState(() => _error = null);
+                          },
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.06),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.10),
+                              ),
+                            ),
+                            child: Text(
+                              '+${preset['label']}',
+                              style: GoogleFonts.jetBrainsMono(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF94A3B8),
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+
+                const SizedBox(height: 18),
+
+                // Category Selector Grid (3 columns, 1:1 với AddEditTransactionScreen.tsx)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'DANH MỤC *',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.5,
+                        color: Color(0xFF94A3B8),
+                      ),
+                    ),
+                    Text(
+                      _type == TransactionType.income
+                          ? 'Gợi ý thu nhập'
+                          : 'Gợi ý chi tiêu',
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+
+                GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: 3,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  childAspectRatio: 1.8,
+                  children: kAllCategories.map((cat) {
+                    final isSelected = _category == cat;
+                    final isIncomeCategory = kIncomeCategories.contains(cat);
+
+                    return InkWell(
+                      onTap: () => setState(() => _category = cat),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? (_type == TransactionType.income
+                                  ? const Color(0xFF34D399).withOpacity(0.20)
+                                  : const Color(0xFFFB7185).withOpacity(0.20))
+                              : const Color(0xFF131C2E).withOpacity(0.68),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isSelected
+                                ? (_type == TransactionType.income
+                                    ? const Color(0xFF34D399).withOpacity(0.60)
+                                    : const Color(0xFFFB7185).withOpacity(0.60))
+                                : Colors.white.withOpacity(0.08),
+                          ),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CategoryIconBadgeWidget(
+                              category: cat,
+                              type: isIncomeCategory
+                                  ? TransactionType.income
+                                  : TransactionType.expense,
+                              size: 26,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              kCategoryLabelsVi[cat] ?? cat,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: isSelected
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                                color: isSelected
+                                    ? (_type == TransactionType.income
+                                        ? const Color(0xFF34D399)
+                                        : const Color(0xFFFB7185))
+                                    : const Color(0xFFF8FAFC),
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+
+                const SizedBox(height: 18),
+
+                // Transaction Date Picker
+                const Text(
+                  'NGÀY GIAO DỊCH *',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                    color: Color(0xFF94A3B8),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                InkWell(
+                  onTap: _pickDate,
+                  borderRadius: BorderRadius.circular(16),
+                  child: GlassTier2Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 12),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              LucideIcons.calendar,
+                              size: 16,
+                              color: Color(0xFF94A3B8),
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              _date,
+                              style: GoogleFonts.jetBrainsMono(
+                                fontSize: 13,
+                                color: const Color(0xFFF8FAFC),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const Icon(
+                          LucideIcons.chevron_right,
+                          size: 16,
+                          color: Color(0xFF94A3B8),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 18),
+
+                // Note Input Field
+                const Text(
+                  'GHI CHÚ (TÙY CHỌN)',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                    color: Color(0xFF94A3B8),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                GlassTier2Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(top: 8),
+                        child: Icon(
+                          LucideIcons.file_text,
+                          size: 16,
+                          color: Color(0xFF94A3B8),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextField(
+                          controller: _noteCtrl,
+                          maxLines: 2,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Color(0xFFF8FAFC),
+                          ),
+                          decoration: const InputDecoration(
+                            hintText: 'Nhập ghi chú (ví dụ: Ăn trưa tại trường)...',
+                            hintStyle: TextStyle(
+                              fontSize: 12.5,
+                              color: Color(0xFF64748B),
+                            ),
+                            border: InputBorder.none,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                if (_error != null) ...[
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF43F5E).withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: const Color(0xFFF43F5E).withOpacity(0.40),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          LucideIcons.circle_alert,
+                          size: 16,
+                          color: Color(0xFFF43F5E),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _error!,
+                            style: const TextStyle(
+                              color: Color(0xFFFB7185),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 24),
+
+                PrimaryGradientButton(
+                  onPressed: _isLoading ? null : _save,
+                  child: _isLoading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Color(0xFF080C14),
+                          ),
+                        )
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              LucideIcons.check,
+                              size: 16,
+                              color: Color(0xFF080C14),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              isEdit ? 'Cập nhật giao dịch' : 'Lưu giao dịch',
+                              style: const TextStyle(
+                                color: Color(0xFF080C14),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 80),
+        ],
       ),
     );
   }
@@ -2851,243 +3393,410 @@ class _AddEditTransactionMobileScreenState
 // ============================================================================
 // MÀN HÌNH 5: CHI TIẾT GIAO DỊCH (1:1 VỚI TRANSACTIONDETAILSCREEN.TSX)
 // ============================================================================
-class TransactionDetailMobileScreen extends StatelessWidget {
+class TransactionDetailMobileScreen extends StatefulWidget {
   final TransactionModel txn;
-  const TransactionDetailMobileScreen({super.key, required this.txn});
+  final VoidCallback onBack;
+  final VoidCallback onEdit;
+  final VoidCallback onDeleted;
 
-  Future<void> _confirmDelete(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF131C2E),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          'Xác nhận xóa giao dịch?',
-          style: TextStyle(color: Color(0xFFF8FAFC), fontWeight: FontWeight.bold),
-        ),
-        content: const Text(
-          'Hành động này sẽ xóa vĩnh viễn giao dịch này khỏi hệ thống và cập nhật lại số dư của bạn.',
-          style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Hủy', style: TextStyle(color: Color(0xFF94A3B8))),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFFB7185),
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Xóa ngay'),
-          ),
-        ],
-      ),
-    );
+  const TransactionDetailMobileScreen({
+    super.key,
+    required this.txn,
+    required this.onBack,
+    required this.onEdit,
+    required this.onDeleted,
+  });
 
-    if (confirmed == true && context.mounted) {
-      await context.read<FinanceProvider>().deleteTransaction(txn.id);
-      if (context.mounted) Navigator.of(context).pop();
+  @override
+  State<TransactionDetailMobileScreen> createState() =>
+      _TransactionDetailMobileScreenState();
+}
+
+class _TransactionDetailMobileScreenState
+    extends State<TransactionDetailMobileScreen> {
+  bool _showDeleteDialog = false;
+  bool _isDeleting = false;
+  String? _deleteError;
+
+  Future<void> _handleDelete() async {
+    setState(() {
+      _isDeleting = true;
+      _deleteError = null;
+    });
+    try {
+      await context
+          .read<FinanceProvider>()
+          .deleteTransaction(widget.txn.id);
+      if (mounted) {
+        widget.onDeleted();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _deleteError = e.toString().replaceFirst('Exception: ', '');
+          _isDeleting = false;
+          _showDeleteDialog = false;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final txn = widget.txn;
     final isIncome = txn.type == TransactionType.income;
     final categoryVi = kCategoryLabelsVi[txn.category] ?? txn.category;
+    final typeVi = isIncome ? 'Thu nhập' : 'Chi tiêu';
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF080C14),
-      body: AmbientLightingCanvas(
-        child: SafeArea(
-          child: Column(
-            children: [
-              // Header
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    InkWell(
-                      onTap: () => Navigator.of(context).pop(),
-                      borderRadius: BorderRadius.circular(12),
-                      child: const Padding(
-                        padding: EdgeInsets.all(8),
-                        child: Row(
-                          children: [
-                            Icon(Icons.chevron_left_rounded,
-                                color: Color(0xFF38BDF8), size: 24),
-                            Text(
-                              'Quay lại',
-                              style: TextStyle(
-                                color: Color(0xFF38BDF8),
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
+    return Stack(
+      children: [
+        ListView(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          children: [
+            // Top Bar
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                InkWell(
+                  onTap: widget.onBack,
+                  borderRadius: BorderRadius.circular(12),
+                  child: GlassTier2Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          LucideIcons.chevron_left,
+                          size: 16,
+                          color: Color(0xFF38BDF8),
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          'Quay lại',
+                          style: TextStyle(
+                            color: Color(0xFFF8FAFC),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const Text(
+                  'Chi tiết giao dịch',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: -0.3,
+                    color: Color(0xFFF8FAFC),
+                  ),
+                ),
+                const SizedBox(width: 80),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+
+            // Hero Card (Tier 1 Frosted Glass — 1:1 với TransactionDetailScreen.tsx)
+            GlassTier1Container(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  // Top Hero Section inside Card
+                  Container(
+                    padding: const EdgeInsets.only(bottom: 20),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          color: Colors.white.withOpacity(0.08),
                         ),
                       ),
                     ),
-                    const Text(
-                      'Chi tiết giao dịch',
-                      style: TextStyle(
-                        fontSize: 16.5,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFFF8FAFC),
+                    child: Column(
+                      children: [
+                        CategoryIconBadgeWidget(
+                          category: txn.category,
+                          type: txn.type,
+                          size: 56,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          '${typeVi.toUpperCase()} · $categoryVi',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.8,
+                            color: Color(0xFF94A3B8),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          formatCurrencyVnd(txn.amount, txn.type),
+                          style: GoogleFonts.jetBrainsMono(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: -0.5,
+                            color: isIncome
+                                ? const Color(0xFF34D399)
+                                : const Color(0xFFFB7185),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Structured Metadata Rows (1:1 với dl/dt/dd trong Web)
+                  const SizedBox(height: 6),
+                  _buildMetaRow('Mã giao dịch', '#${txn.id}', isMono: true),
+                  _buildDivider(),
+                  _buildMetaRow(
+                    'Loại giao dịch',
+                    typeVi,
+                    customColor: isIncome
+                        ? const Color(0xFF34D399)
+                        : const Color(0xFFFB7185),
+                  ),
+                  _buildDivider(),
+                  _buildMetaRowWithIcon(
+                    'Danh mục',
+                    categoryVi,
+                    getLucideCategoryIcon(txn.category),
+                  ),
+                  _buildDivider(),
+                  _buildMetaRow(
+                    'Ngày giao dịch',
+                    formatLongDate(txn.date),
+                    isMono: true,
+                  ),
+                  _buildDivider(),
+                  _buildMetaRow(
+                    'Tài khoản',
+                    txn.ownerEmail,
+                    isMono: true,
+                    customColor: const Color(0xFF38BDF8),
+                  ),
+                  _buildDivider(),
+                  _buildMetaRow(
+                    'Ghi chú',
+                    txn.note.isEmpty ? 'Không có ghi chú bổ sung' : txn.note,
+                    isItalic: txn.note.isEmpty,
+                  ),
+                ],
+              ),
+            ),
+
+            if (_deleteError != null) ...[
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF43F5E).withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: const Color(0xFFF43F5E).withOpacity(0.40),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      LucideIcons.circle_alert,
+                      size: 16,
+                      color: Color(0xFFF43F5E),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _deleteError!,
+                        style: const TextStyle(
+                          color: Color(0xFFFB7185),
+                          fontSize: 12,
+                        ),
                       ),
                     ),
-                    const SizedBox(width: 72),
                   ],
                 ),
               ),
+            ],
 
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
+            const SizedBox(height: 24),
+
+            // Action Buttons Bar
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: widget.onEdit,
+                    borderRadius: BorderRadius.circular(16),
+                    child: GlassTier2Container(
+                      height: 48,
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            LucideIcons.pencil,
+                            size: 16,
+                            color: Color(0xFF38BDF8),
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            'Chỉnh sửa',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFF8FAFC),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _showDeleteDialog = true),
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFB7185).withOpacity(0.14),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: const Color(0xFFFB7185).withOpacity(0.35),
+                        ),
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            LucideIcons.trash,
+                            size: 16,
+                            color: Color(0xFFFB7185),
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            'Xóa',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFFB7185),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 80),
+          ],
+        ),
+
+        // Tier 1 Glass Delete Confirmation Dialog (1:1 với TransactionDetailScreen.tsx)
+        if (_showDeleteDialog)
+          Positioned.fill(
+            child: Container(
+              color: Colors.black.withOpacity(0.80),
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Center(
+                child: GlassTier1Container(
+                  borderRadius: 24,
+                  padding: const EdgeInsets.all(22),
                   child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Hero Glass Card
-                      GlassTier1Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 28),
-                        child: Center(
-                          child: Column(
-                            children: [
-                              CategoryIconBadgeWidget(
-                                category: txn.category,
-                                type: txn.type,
-                                size: 64,
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                formatCurrencyVnd(txn.amount, txn.type),
-                                style: GoogleFonts.jetBrainsMono(
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: -0.5,
-                                  color: isIncome
-                                      ? const Color(0xFF34D399)
-                                      : const Color(0xFFFB7185),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: isIncome
-                                      ? const Color(0xFF34D399).withOpacity(0.15)
-                                      : const Color(0xFFFB7185).withOpacity(0.15),
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                    color: isIncome
-                                        ? const Color(0xFF34D399).withOpacity(0.35)
-                                        : const Color(0xFFFB7185).withOpacity(0.35),
-                                  ),
-                                ),
-                                child: Text(
-                                  isIncome ? 'Thu nhập' : 'Chi tiêu',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: isIncome
-                                        ? const Color(0xFF34D399)
-                                        : const Color(0xFFFB7185),
-                                  ),
-                                ),
-                              ),
-                            ],
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFB7185).withOpacity(0.20),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: const Color(0xFFFB7185).withOpacity(0.40),
+                          ),
+                        ),
+                        child: const Center(
+                          child: Icon(
+                            LucideIcons.triangle_alert,
+                            size: 24,
+                            color: Color(0xFFFB7185),
                           ),
                         ),
                       ),
-
-                      const SizedBox(height: 20),
-
-                      // Info Details List
-                      GlassTier2Container(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          children: [
-                            _buildInfoRow('Danh mục', categoryVi),
-                            const Divider(color: Colors.white12, height: 24),
-                            _buildInfoRow('Ngày giao dịch', txn.date,
-                                isMono: true),
-                            const Divider(color: Colors.white12, height: 24),
-                            _buildInfoRow('Ghi chú',
-                                txn.note.isEmpty ? 'Không có ghi chú' : txn.note),
-                            const Divider(color: Colors.white12, height: 24),
-                            _buildInfoRow('Mã giao dịch', txn.id, isMono: true),
-                          ],
+                      const SizedBox(height: 14),
+                      const Text(
+                        'Xóa giao dịch này?',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFFF8FAFC),
                         ),
                       ),
-
-                      const SizedBox(height: 28),
-
-                      // Action Buttons (Chỉnh sửa / Xóa)
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Bạn có chắc chắn muốn xóa vĩnh viễn giao dịch này? Số dư tài khoản sẽ được tính toán lại ngay lập tức.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFF94A3B8),
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 22),
                       Row(
                         children: [
                           Expanded(
-                            child: PrimaryGradientButton(
-                              onPressed: () {
-                                Navigator.of(context).pushReplacement(
-                                  MaterialPageRoute(
-                                    builder: (_) => AddEditTransactionMobileScreen(
-                                      initialTxn: txn,
-                                    ),
-                                  ),
-                                );
-                              },
-                              child: const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.edit_outlined,
-                                      size: 16, color: Color(0xFF080C14)),
-                                  SizedBox(width: 6),
-                                  Text(
-                                    'Chỉnh sửa',
+                            child: InkWell(
+                              onTap: () =>
+                                  setState(() => _showDeleteDialog = false),
+                              borderRadius: BorderRadius.circular(12),
+                              child: GlassTier2Container(
+                                height: 44,
+                                child: const Center(
+                                  child: Text(
+                                    'Hủy',
                                     style: TextStyle(
-                                      color: Color(0xFF080C14),
+                                      fontSize: 13.5,
                                       fontWeight: FontWeight.bold,
-                                      fontSize: 14,
+                                      color: Color(0xFFF8FAFC),
                                     ),
                                   ),
-                                ],
+                                ),
                               ),
                             ),
                           ),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: 10),
                           Expanded(
                             child: InkWell(
-                              onTap: () => _confirmDelete(context),
-                              borderRadius: BorderRadius.circular(16),
+                              onTap: _isDeleting ? null : _handleDelete,
+                              borderRadius: BorderRadius.circular(12),
                               child: Container(
-                                height: 48,
+                                height: 44,
                                 decoration: BoxDecoration(
-                                  color:
-                                      const Color(0xFFFB7185).withOpacity(0.15),
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(
-                                    color: const Color(0xFFFB7185)
-                                        .withOpacity(0.35),
-                                  ),
+                                  color: const Color(0xFFF43F5E),
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
-                                child: const Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.delete_outline_rounded,
-                                        size: 18, color: Color(0xFFFB7185)),
-                                    SizedBox(width: 6),
-                                    Text(
-                                      'Xóa giao dịch',
-                                      style: TextStyle(
-                                        color: Color(0xFFFB7185),
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                  ],
+                                child: Center(
+                                  child: _isDeleting
+                                      ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                      : const Text(
+                                          'Xác nhận xóa',
+                                          style: TextStyle(
+                                            fontSize: 13.5,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                          ),
+                                        ),
                                 ),
                               ),
                             ),
@@ -3098,43 +3807,94 @@ class TransactionDetailMobileScreen extends StatelessWidget {
                   ),
                 ),
               ),
-            ],
+            ),
           ),
-        ),
+      ],
+    );
+  }
+
+  Widget _buildMetaRow(String label, String value,
+      {bool isMono = false, Color? customColor, bool isItalic = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF94A3B8),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: isMono
+                  ? GoogleFonts.jetBrainsMono(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                      color: customColor ?? const Color(0xFFF8FAFC),
+                      fontStyle:
+                          isItalic ? FontStyle.italic : FontStyle.normal,
+                    )
+                  : TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                      color: customColor ?? const Color(0xFFF8FAFC),
+                      fontStyle:
+                          isItalic ? FontStyle.italic : FontStyle.normal,
+                    ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildInfoRow(String label, String value, {bool isMono = false}) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 13,
-            color: Color(0xFF94A3B8),
+  Widget _buildMetaRowWithIcon(String label, String value, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF94A3B8),
+            ),
           ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Text(
-            value,
-            textAlign: TextAlign.end,
-            style: isMono
-                ? GoogleFonts.jetBrainsMono(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: const Color(0xFFF8FAFC),
-                  )
-                : const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFFF8FAFC),
-                  ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: const Color(0xFF38BDF8)),
+              const SizedBox(width: 6),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFFF8FAFC),
+                ),
+              ),
+            ],
           ),
-        ),
-      ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDivider() {
+    return Divider(
+      height: 1,
+      thickness: 1,
+      color: Colors.white.withOpacity(0.07),
     );
   }
 }
