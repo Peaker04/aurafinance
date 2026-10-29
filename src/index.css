@@ -1,0 +1,114 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-obsidian: #080C14;
+    --text-primary: #F8FAFC;
+    --text-secondary: #94A3B8;
+    --text-muted: #64748B;
+    --color-income: #34D399;
+    --color-expense: #FB7185;
+    --color-warning: #FBBF24;
+    --color-error: #F43F5E;
+    --font-sans: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+    --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+  }
+
+  html,
+  body {
+    background-color: var(--bg-obsidian);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+    min-height: 100dvh;
+  }
+}
+
+.font-display {
+  font-family: var(--font-sans);
+}
+
+.font-tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* iOS Safe Area Utilities */
+.pt-safe {
+  padding-top: max(calc(env(safe-area-inset-top, 0px) + 8px), 24px);
+}
+
+.pb-safe {
+  padding-bottom: max(calc(env(safe-area-inset-bottom, 0px) + 8px), 24px);
+}
+
+.pb-safe-scroll {
+  padding-bottom: calc(116px + env(safe-area-inset-bottom, 0px));
+}
+
+.bottom-safe-nav {
+  bottom: max(calc(env(safe-area-inset-bottom, 0px) + 4px), 20px);
+}
+
+.bottom-safe-toast {
+  bottom: calc(92px + max(env(safe-area-inset-bottom, 0px), 16px));
+}
+
+/* Tier 1 — Hero Frosted Glass (ONLY for Main Balance Card, Floating Bottom Tab Bar, Login Card, Detail Hero Card, and Delete Confirmation Dialog) */
+.glass-tier-1 {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.04) 100%);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 16px 36px -8px rgba(0, 0, 0, 0.55);
+  border-radius: 24px;
+}
+
+/* Tier 2 — Tinted Translucent Surface (Transaction List Rows, Search Bar, Filter Chips, and Form Inputs — NO heavy blur for 60fps iOS scrolling) */
+.glass-tier-2 {
+  background: rgba(19, 28, 46, 0.68);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1), border-color 150ms cubic-bezier(0.16, 1, 0.3, 1), transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-tier-2-interactive:hover,
+.glass-tier-2-interactive:focus-visible {
+  background: rgba(30, 41, 69, 0.85);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.glass-tier-2-interactive:active {
+  transform: scale(0.985);
+}
+
+/* Primary Interactive Accent Gradient */
+.btn-primary-gradient {
+  background: linear-gradient(135deg, #38BDF8 0%, #818CF8 100%);
+  box-shadow: 0 8px 24px -4px rgba(56, 189, 248, 0.35);
+  transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1), opacity 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-primary-gradient:hover:not(:disabled) {
+  opacity: 0.94;
+}
+
+.btn-primary-gradient:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+/* Hide scrollbars inside mobile viewport and horizontal chip rails while maintaining smooth scroll */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

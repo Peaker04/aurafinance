@@ -1,0 +1,55 @@
+name: Build iOS IPA (AuraFinance)
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  build-ios-ipa:
+    name: Build Unsigned iOS .ipa on macOS
+    runs-on: macos-latest
+
+    steps:
+      - name: 1. Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 2. Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: 3. Generate iOS Platform Folder & Install Dependencies
+        working-directory: ./flutter_app
+        run: |
+          if [ ! -d "ios" ]; then
+            cp lib/main.dart /tmp/main.dart.bak
+            cp pubspec.yaml /tmp/pubspec.yaml.bak
+            flutter create . --platforms=ios --org vn.edu.fpt.aurafinance --project-name aurafinance_prm393_pe2
+            cp /tmp/main.dart.bak lib/main.dart
+            cp /tmp/pubspec.yaml.bak pubspec.yaml
+          fi
+          flutter pub get
+
+      - name: 4. Build Flutter iOS Release (No Codesign for Sideloading)
+        working-directory: ./flutter_app
+        run: |
+          flutter build ios --release --no-codesign
+
+      - name: 5. Package Runner.app into AuraFinance-iOS.ipa
+        working-directory: ./flutter_app/build/ios/iphoneos
+        run: |
+          mkdir -p Payload
+          cp -r Runner.app Payload/
+          zip -qry AuraFinance-iOS.ipa Payload
+          ls -lh AuraFinance-iOS.ipa
+
+      - name: 6. Upload AuraFinance-iOS.ipa Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AuraFinance-iOS-IPA
+          path: ./flutter_app/build/ios/iphoneos/AuraFinance-iOS.ipa
+          retention-days: 30

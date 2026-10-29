@@ -1,0 +1,6 @@
+{
+  "name": "AuraFinance — PRM393 Personal Finance Tracker",
+  "description": "High-craft iOS Liquid Glassmorphism Personal Finance Tracker built for PRM393_PE2 with multi-user isolation, persistent session restoration, full CRUD, and Flutter + Node.js REST architecture.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

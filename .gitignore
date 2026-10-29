@@ -1,0 +1,19 @@
+# Dependencies & Build
+node_modules/
+dist/
+build/
+coverage/
+.playwright-cli/
+
+# Environment & Credentials
+.env*
+!.env.example
+
+# SQLite Databases & WAL/SHM
+*.sqlite
+*.sqlite-*
+
+# Logs & OS
+*.log
+.DS_Store
+Thumbs.db
