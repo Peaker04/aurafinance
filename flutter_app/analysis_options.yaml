@@ -4,6 +4,8 @@ analyzer:
   errors:
     deprecated_member_use: ignore
     unnecessary_import: ignore
+    prefer_const_constructors: ignore
+    prefer_const_literals_to_create_immutables: ignore
   exclude:
     - build/**
     - android/**
